@@ -227,6 +227,8 @@ impl<P: GroupParams> AffineG<P> {
 
             Ok(AffineG { x: x, y: y })
         } else {
+            println!("444444444444");
+
             Err(Error::NotOnCurve)
         }
     }

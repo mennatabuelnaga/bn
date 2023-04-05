@@ -1,8 +1,8 @@
 use rand::Rng;
 use core::cmp::Ordering;
 
-use byteorder::{BigEndian, ByteOrder};
-
+use byteorder::{ByteOrder, LittleEndian};
+use primitive_types::U256 as U256_2;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -15,6 +15,8 @@ pub struct U256(pub [u128; 2]);
 
 impl From<[u64; 4]> for U256 {
     fn from(d: [u64; 4]) -> Self {
+        // println!("frommmm {:?}", d);
+
         let mut a = [0u128; 2];
         a[0] = (d[1] as u128) << 64 | d[0] as u128;
         a[1] = (d[3] as u128) << 64 | d[2] as u128;
@@ -22,11 +24,17 @@ impl From<[u64; 4]> for U256 {
     }
 }
 
+
+
 impl From<u64> for U256 {
     fn from(d: u64) -> Self {
+        println!("555555555555");
         U256::from([d, 0, 0, 0])
     }
 }
+
+
+
 
 /// 512-bit, stack allocated biginteger for use in extension
 /// field serialization and scalar interpretation.
@@ -74,6 +82,8 @@ impl U512 {
                 carry = c;
 
                 res[i + 2] = combine_u128(r1, r0);
+                // res[i + 2] = combine_u128(r0, r1);
+
             }
         }
 
@@ -91,8 +101,8 @@ impl U512 {
         }
 
         let mut n = [0; 4];
-        for (l, i) in (0..4).rev().zip((0..4).map(|i| i * 16)) {
-            n[l] = BigEndian::read_u128(&s[i..]);
+        for (l, i) in (0..4).zip((0..4).map(|i| i * 16)) {
+            n[l] = LittleEndian::read_u128(&s[i..]);
         }
 
         Ok(U512(n))
@@ -142,8 +152,8 @@ impl U512 {
 
     pub fn interpret(buf: &[u8; 64]) -> U512 {
         let mut n = [0; 4];
-        for (l, i) in (0..4).rev().zip((0..4).map(|i| i * 16)) {
-            n[l] = BigEndian::read_u128(&buf[i..]);
+        for (l, i) in (0..4).zip((0..4).map(|i| i * 16)) { // (0,0), (1,16) (2,32) (3,48) vs (3,0) (2,16) (1,32) (0,48)
+            n[l] = LittleEndian::read_u128(&buf[i..]);
         }
 
         U512(n)
@@ -201,7 +211,7 @@ pub enum Error {
 }
 
 impl U256 {
-    /// Initialize U256 from slice of bytes (big endian)
+    /// Initialize U256 from slice of bytes (little endian)
     pub fn from_slice(s: &[u8]) -> Result<U256, Error> {
         if s.len() != 32 {
             return Err(Error::InvalidLength {
@@ -211,14 +221,14 @@ impl U256 {
         }
 
         let mut n = [0; 2];
-        for (l, i) in (0..2).rev().zip((0..2).map(|i| i * 16)) {
-            n[l] = BigEndian::read_u128(&s[i..]);
+        for (l, i) in (0..2).zip((0..2).map(|i| i * 16)) {
+            n[l] = LittleEndian::read_u128(&s[i..]);
         }
-
+        println!("**************** {:?}", U256(n).0);
         Ok(U256(n))
     }
 
-    pub fn to_big_endian(&self, s: &mut [u8]) -> Result<(), Error> {
+    pub fn to_little_endian(&self, s: &mut [u8]) -> Result<(), Error> {
         if s.len() != 32 {
             return Err(Error::InvalidLength {
                 expected: 32,
@@ -226,8 +236,8 @@ impl U256 {
             });
         }
 
-        for (l, i) in (0..2).rev().zip((0..2).map(|i| i * 16)) {
-            BigEndian::write_u128(&mut s[i..], self.0[l]);
+        for (l, i) in (0..2).zip((0..2).map(|i| i * 16)) {
+            LittleEndian::write_u128(&mut s[i..], self.0[l]);
         }
 
         Ok(())
@@ -435,6 +445,8 @@ fn adc(a: u128, b: u128, carry: &mut u128) -> u128 {
     *carry = c;
 
     combine_u128(r1, r0)
+    // combine_u128(r0, r1)
+
 }
 
 #[inline]
@@ -460,6 +472,8 @@ fn sub_noborrow(a: &mut [u128; 2], b: &[u128; 2]) {
         *borrow = (b == 0) as u128;
 
         combine_u128(r1, r0)
+        // combine_u128(r0, r1) 
+
     }
 
     let mut borrow = 0;
@@ -490,6 +504,8 @@ fn mac_digit(from_index: usize, acc: &mut [u128; 4], b: &[u128; 2], c: u128) {
         *carry = (b_hi * c_hi) + r_hi + y_hi + z_hi;
 
         combine_u128(r_lo, x_lo)
+        // combine_u128(x_lo, r_lo)
+
     }
 
     if c == 0 {
@@ -517,6 +533,8 @@ fn mac_digit(from_index: usize, acc: &mut [u128; 4], b: &[u128; 2], c: u128) {
                 carry = r_hi;
 
                 acc[a_index] = combine_u128(r_lo, x_lo);
+                // acc[a_index] = combine_u128(x_lo, r_lo);
+
             }
         }
     }
@@ -565,25 +583,34 @@ fn setting_bits() {
 fn from_slice() {
     let tst = U256::one();
     let mut s = [0u8; 32];
-    s[31] = 1;
+    s[0] = 1;
 
     let num =
         U256::from_slice(&s).expect("U256 should initialize ok from slice in `from_slice` test");
     assert_eq!(num, tst);
+
+
+
 }
 
 #[test]
-fn to_big_endian() {
+fn to_little_endian() {
     let num = U256::one();
     let mut s = [0u8; 32];
+    let mut s2 = [0u8; 32];
 
-    num.to_big_endian(&mut s)
-        .expect("U256 should convert to bytes ok in `to_big_endian` test");
+    let num2 = U256_2::one();
+
+    num.to_little_endian(&mut s)
+        .expect("U256 should convert to bytes ok in `to_little_endian` test");
+
+    num2.to_little_endian(&mut s2);
+    assert_eq!(s, s2);
     assert_eq!(
         s,
         [
-            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
-            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8,
+            1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
         ]
     );
 }
@@ -623,6 +650,7 @@ fn testing_divrem() {
             0,
             0,
         ]);
+      
 
         let (c1, c0) = a.divrem(&modulo);
         assert_eq!(c1.unwrap(), U256::one());

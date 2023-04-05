@@ -27,7 +27,7 @@ use groups::{G1Params, G2Params, GroupElement, GroupParams};
 use alloc::vec::Vec;
 use rand::Rng;
 use core::ops::{Add, Mul, Neg, Sub};
-
+use primitive_types::U256 as U256_2;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[repr(C)]
@@ -63,10 +63,10 @@ impl Fr {
             .map_err(|_| FieldError::InvalidSliceLength) // todo: maybe more sensful error handling
             .map(|x| Fr::new_mul_factor(x))
     }
-    pub fn to_big_endian(&self, slice: &mut [u8]) -> Result<(), FieldError> {
+    pub fn to_little_endian(&self, slice: &mut [u8]) -> Result<(), FieldError> {
         self.0
             .raw()
-            .to_big_endian(slice)
+            .to_little_endian(slice)
             .map_err(|_| FieldError::InvalidSliceLength)
     }
     pub fn new(val: arith::U256) -> Option<Self> {
@@ -169,12 +169,13 @@ impl Fq {
         Fq(fields::Fq::interpret(buf))
     }
     pub fn from_slice(slice: &[u8]) -> Result<Self, FieldError> {
+        println!("1111111111");
         arith::U256::from_slice(slice)
             .map_err(|_| FieldError::InvalidSliceLength) // todo: maybe more sensful error handling
-            .and_then(|x| fields::Fq::new(x).ok_or(FieldError::NotMember))
+            .and_then(|x| {println!("xxxxxxxxxxx{x:?}"); fields::Fq::new(x).ok_or(FieldError::NotMember)})
             .map(|x| Fq(x))
     }
-    pub fn to_big_endian(&self, slice: &mut [u8]) -> Result<(), FieldError> {
+    pub fn to_little_endian(&self, slice: &mut [u8]) -> Result<(), FieldError> {
         let mut a: arith::U256 = self.0.into();
         // convert from Montgomery representation
         a.mul(
@@ -182,7 +183,7 @@ impl Fq {
             &fields::Fq::modulus(),
             self.0.inv(),
         );
-        a.to_big_endian(slice)
+        a.to_little_endian(slice)
             .map_err(|_| FieldError::InvalidSliceLength)
     }
     pub fn from_u256(u256: arith::U256) -> Result<Self, FieldError> {
@@ -278,6 +279,7 @@ impl Fq2 {
     pub fn from_slice(bytes: &[u8]) -> Result<Self, FieldError> {
         let u512 = arith::U512::from_slice(bytes).map_err(|_| FieldError::InvalidU512Encoding)?;
         let (res, c0) = u512.divrem(&Fq::modulus());
+        println!("c0{c0:?} res{res:?}");
         Ok(Fq2::new(
             Fq::from_u256(c0).map_err(|_| FieldError::NotMember)?,
             Fq::from_u256(res.ok_or(FieldError::NotMember)?).map_err(|_| FieldError::NotMember)?,
@@ -383,10 +385,13 @@ impl G1 {
 
         let sign = bytes[0];
         let fq = Fq::from_slice(&bytes[1..])?;
+        // let sign = bytes[32];
+        // let fq = Fq::from_slice(&bytes[0..32])?;
         let x = fq;
         let y_squared = (fq * fq * fq) + Self::b();
-
+        println!("2222222222222");
         let mut y = y_squared.sqrt().ok_or(CurveError::NotMember)?;
+        println!("3333333333333");
 
         if sign == 2 && y.into_u256().get_bit(0).expect("bit 0 always exist; qed") {
             y = y.neg();
@@ -756,9 +761,11 @@ impl From<AffineG2> for G2 {
 #[cfg(test)]
 mod tests {
     extern crate rustc_hex as hex;
+    use core::str::FromStr;
+
     use super::{Fq, Fq2, G1, G2};
     use alloc::vec::Vec;
-
+    use crate::U256_2;
     fn hex(s: &'static str) -> Vec<u8> {
         use self::hex::FromHex;
         s.from_hex().unwrap()
@@ -770,6 +777,9 @@ mod tests {
             "0230644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd46",
         ))
         .expect("Invalid g1 decompress result");
+
+       
+        
         assert_eq!(
             g1.x(),
             Fq::from_str(
